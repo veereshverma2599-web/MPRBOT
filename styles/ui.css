@@ -1,0 +1,72 @@
+/* Page */
+.stApp {
+  background-color: hsl(315, 100%, 99%);
+}
+
+/* Title */
+h1 {
+  font-size: 38px;
+  font-weight: 700;
+}
+
+/* Control panel spacing */
+section[data-testid="stVerticalBlock"] > div {
+  gap: 16px;
+}
+
+/* Text area */
+textarea {
+  border-radius: 12px !important;
+  border: 1px solid #d1d5db !important;
+}
+
+/* Selectbox */
+div[data-baseweb="select"] {
+  border-radius: 10px;
+}
+
+/* Button */
+button {
+  border-radius: 999px !important;
+  padding: 8px 20px !important;
+  font-weight: 600;
+}
+
+img {
+  margin-top: 20px;
+}
+
+/* =========================
+   Recommended Solution Block
+   ========================= */
+
+.recommendation-card {
+    background: #fff1f4;              /* light pink */
+    border-left: 6px solid #e11d48;    /* dark pink accent */
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin: 12px 0 24px 0;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.06);
+}
+
+.recommendation-title {
+    display: flex;
+    align-items: center;
+    font-size: 20px;
+    font-weight: 700;
+    color: #111827; /* black */
+    margin-bottom: 10px;
+}
+
+.recommendation-title span {
+    margin-right: 10px;
+    font-size: 22px;
+}
+
+.recommendation-text {
+    color: #111827; /* black */
+    font-size: 15px;
+    line-height: 1.6;
+    white-space: pre-line; /* keeps line breaks */
+}
+
