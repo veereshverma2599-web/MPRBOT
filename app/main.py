@@ -39,22 +39,35 @@ st.set_page_config(
 # =========================
 def load_css():
     css_path = Path(__file__).parent.parent / "styles" / "ui.css"
-    with open(css_path) as f:
-        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+    if css_path.exists():
+        with open(css_path) as f:
+            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
 load_css()
 
 # =========================
-# Helper: Build Recommendation
+# Helper: Build Recommendation (PDF + CSV SAFE)
 # =========================
 def build_recommendation(results, top_n=3):
     recommendations = []
 
+    POSSIBLE_TEXT_FIELDS = [
+        "Resolution",
+        "resolution",
+        "solution",
+        "answer",
+        "details",
+        "text",
+        "content",
+        "page_content",
+        "chunk"
+    ]
+
     for r in results[:top_n]:
-        if r.get("Resolution"):
-            recommendations.append(f"• {r['Resolution']}")
-        elif r.get("details"):
-            recommendations.append(f"• {r['details']}")
+        for field in POSSIBLE_TEXT_FIELDS:
+            if r.get(field):
+                recommendations.append(f"• {r[field]}")
+                break
 
     if not recommendations:
         return "No clear resolution found in historical cases."
@@ -62,17 +75,12 @@ def build_recommendation(results, top_n=3):
     return "\n".join(recommendations)
 
 # =========================
-# Centered Header (Logo + Query Type)
+# Header (Logo + Mode)
 # =========================
-scale = "2k"  # fixed scale
-
 with st.container():
-
     _, logo_col, _ = st.columns([1, 1, 1])
     with logo_col:
         st.image("assets/logo.png", width=280)
-
-    st.markdown("<div style='margin-top:-20px'></div>", unsafe_allow_html=True)
 
     _, radio_col, _ = st.columns([1, 1, 1])
     with radio_col:
@@ -82,7 +90,8 @@ with st.container():
             horizontal=True,
             label_visibility="collapsed"
         )
-        # =========================
+
+# =========================
 # Reset state on mode change
 # =========================
 if "last_query_mode" not in st.session_state:
@@ -93,22 +102,35 @@ if st.session_state.last_query_mode != query_mode:
     st.session_state.active_owner = None
     st.session_state.last_query_mode = query_mode
 
-
 # =========================
-# Load heavy resources
+# Load FAISS + Model
 # =========================
 @st.cache_resource
-def load_resources(scale):
+def load_resources():
+    BASE_DIR = Path(__file__).resolve().parents[1]
+    DATA_DIR = BASE_DIR / "data"
+
+    index_path = DATA_DIR / "pdf_index.faiss"
+    meta_path = DATA_DIR / "pdf_meta.pkl"
+
+    if not index_path.exists():
+        raise FileNotFoundError(f"FAISS index not found: {index_path}")
+
+    if not meta_path.exists():
+        raise FileNotFoundError(f"Metadata file not found: {meta_path}")
+
     model = SentenceTransformer("all-MiniLM-L6-v2")
-    index = faiss.read_index(f"data/case_index_{scale}.faiss")
-    with open(f"data/case_meta_{scale}.pkl", "rb") as f:
+    index = faiss.read_index(str(index_path))
+
+    with open(meta_path, "rb") as f:
         metadata = pickle.load(f)
+
     return model, index, metadata
 
-model, index, metadata = load_resources(scale)
+model, index, metadata = load_resources()
 
 # =========================
-# User Input Section
+# User Input
 # =========================
 if query_mode == "General MPR Issue":
     query = st.text_area(
@@ -125,13 +147,10 @@ else:
 run_clicked = st.button("Run")
 
 # =========================
-# Session State Init
+# Session defaults
 # =========================
-if "user_summary" not in st.session_state:
-    st.session_state.user_summary = None
-
-if "active_owner" not in st.session_state:
-    st.session_state.active_owner = None
+st.session_state.setdefault("user_summary", None)
+st.session_state.setdefault("active_owner", None)
 
 # =========================
 # General MPR Flow
@@ -149,53 +168,63 @@ if run_clicked and query_mode == "General MPR Issue":
             )
 
         results = sorted(results, key=lambda x: x.get("confidence", 0), reverse=True)
+        best_conf = round(results[0].get("confidence", 0), 2) if results else 0
 
         # =========================
-        # ✅ Recommended Solution
+        # Recommended Solution
         # =========================
         st.subheader("✅ Recommended Solution")
         recommendation_text = build_recommendation(results)
-        st.markdown(
-    f"""
-    <div class="recommendation-card">
-        <div class="recommendation-title">
-            <span>✅</span>
-            Recommended Solution
-        </div>
-        <div class="recommendation-text">
-            {recommendation_text}
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
 
+        st.markdown(
+            f"""
+            <div class="recommendation-card">
+                <div class="recommendation-title">
+                    <span>✅</span>
+                    Recommended Solution
+                    <span style="font-size:12px; color:#777;">
+                        (derived from {best_conf}% similar historical cases)
+                    </span>
+                </div>
+                <div class="recommendation-text">
+                    {recommendation_text}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
         # =========================
         # Similar Historical Cases
         # =========================
         st.subheader("🔍 Similar Historical Cases")
 
-        IMPORTANT_FIELDS = [
-            "caseid",
-            "category",
-            "statuscode",
-            "currentowner",
-            "reportedon",
-            "aging",
-            "subject",
-            "details",
-            "Resolution"
-        ]
-
         for i, r in enumerate(results, 1):
             confidence = round(r.get("confidence", 0), 2)
             label = "🟢 Best Match" if i == 1 else ""
 
             with st.expander(f"Case {i} {label} — Match Confidence: {confidence}%"):
-                for field in IMPORTANT_FIELDS:
-                    if field in r and r[field]:
-                        st.write(f"**{field}**: {r[field]}")
+                for k, v in r.items():
+                    if k == "confidence" or not v:
+                        continue
+
+                    if k.lower() in ["resolution", "solution", "answer"]:
+                        st.markdown(
+                            f"""
+                            <div style="
+                                background:#f1f8f4;
+                                padding:12px;
+                                border-left:4px solid #2e7d32;
+                                margin:10px 0;
+                            ">
+                                <b>✅ Solution</b><br>
+                                {v}
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
+                    else:
+                        st.write(f"**{k}**: {v}")
 
 # =========================
 # User / Case Insights
@@ -213,17 +242,14 @@ if run_clicked and query_mode == "User-Specific View":
                 case = insights["data"]
                 st.subheader(f"📄 Case Details — {case['caseid']}")
                 st.json(case)
-                st.session_state.user_summary = None
-                st.session_state.active_owner = None
             else:
-                summary = insights["data"]
-                st.session_state.user_summary = summary
-                st.session_state.active_owner = summary["owner"]
+                st.session_state.user_summary = insights["data"]
+                st.session_state.active_owner = insights["data"]["owner"]
 
 # =========================
 # User Summary View
 # =========================
-if st.session_state.user_summary is not None:
+if st.session_state.user_summary:
     summary = st.session_state.user_summary
     owner = st.session_state.active_owner
 
@@ -235,38 +261,4 @@ if st.session_state.user_summary is not None:
     c3.metric("Overdue (>7d)", summary["overdue_cases"])
     c4.metric("Critical (>21d)", summary["critical_cases"])
 
-    st.markdown("### Status Breakdown")
     st.json(summary["status_breakdown"])
-
-    st.markdown("---")
-    st.subheader("📌 Focused Case View")
-
-    case_type = st.radio(
-        "Select case category",
-        ["Pending", "Overdue", "Critical"],
-        horizontal=True
-    )
-
-    if case_type == "Pending":
-        cases = get_pending_cases(owner)
-        badge = "🟡 Pending"
-        empty_msg = "No pending cases found for this user."
-    elif case_type == "Overdue":
-        cases = get_overdue_cases(owner)
-        badge = "🟠 Overdue"
-        empty_msg = "No overdue cases found for this user."
-    else:
-        cases = get_critical_cases(owner)
-        badge = "🔴 Critical"
-        empty_msg = "No critical cases found for this user."
-
-    if not cases:
-        st.info(empty_msg)
-    else:
-        for c in cases:
-            with st.expander(f"{badge} | Case {c['caseid']} | Aging: {c['aging']} days"):
-                st.write(f"**Category:** {c['category']}")
-                st.write(f"**Status:** {c['statuscode']}")
-                st.write(f"**Reported On:** {c['reportedon']}")
-                st.write(f"**Subject:** {c.get('subject','')}")
-                st.write(f"**Details:** {c.get('details','')}")
