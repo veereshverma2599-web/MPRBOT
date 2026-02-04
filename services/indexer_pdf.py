@@ -1,90 +1,100 @@
-import time
+import os
+import json
+import hashlib
 import pickle
 from pathlib import Path
+from datetime import datetime
 
 import faiss
-import numpy as np
 from sentence_transformers import SentenceTransformer
-from pypdf import PdfReader
 
-
-# Paths
-
-# Paths
+# =========================
+# PATH SETUP
+# =========================
 BASE_DIR = Path(__file__).resolve().parents[1]
+PDF_DIR = BASE_DIR / "pdfs"
+DATA_DIR = BASE_DIR / "data"
 
-PDF_DIR = BASE_DIR / "data" / "pdfs"
-INDEX_PATH = BASE_DIR / "data" / "pdf_index.faiss"
-META_PATH = BASE_DIR / "data" / "pdf_meta.pkl"
+INDEX_PATH = DATA_DIR / "pdf_index.faiss"
+META_PATH = DATA_DIR / "pdf_meta.pkl"
+REGISTRY_PATH = DATA_DIR / "index_registry.json"
 
+model = SentenceTransformer("all-MiniLM-L6-v2")
 
+# =========================
+# HELPERS
+# =========================
+def file_hash(path):
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
-# PDF Loader
+def load_registry():
+    if REGISTRY_PATH.exists():
+        return json.loads(REGISTRY_PATH.read_text())
+    return {"indexed_files": {}}
 
-def load_pdfs(pdf_dir: Path):
-    docs = []
+def save_registry(reg):
+    REGISTRY_PATH.write_text(json.dumps(reg, indent=2))
 
-    for pdf_file in pdf_dir.glob("*.pdf"):
-        reader = PdfReader(pdf_file)
-        text = ""
+# =========================
+# PDF DISCOVERY
+# =========================
+def get_new_pdfs():
+    registry = load_registry()
+    indexed = registry["indexed_files"]
 
-        for page in reader.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
+    new_files = []
+    for pdf in PDF_DIR.glob("*.pdf"):
+        h = file_hash(pdf)
+        if pdf.name not in indexed or indexed[pdf.name]["hash"] != h:
+            new_files.append((pdf, h))
 
-        if text.strip():
-            docs.append({
-                "source": pdf_file.name,
-                "text": text
-            })
+    return new_files, registry
 
-    if not docs:
-        raise RuntimeError("No valid PDFs found")
+# =========================
+# MAIN INCREMENTAL INDEXER
+# =========================
+def incremental_index():
+    new_files, registry = get_new_pdfs()
 
-    return docs
+    if not new_files:
+        print("No new PDFs found")
+        return
 
-# =============================
-# Index Builder
-# =============================
-def build_pdf_index():
-    print("=== PDF INDEX BUILD STARTED ===")
-    start = time.time()
+    # Load or create FAISS
+    if INDEX_PATH.exists():
+        index = faiss.read_index(str(INDEX_PATH))
+        meta = pickle.load(open(META_PATH, "rb"))
+    else:
+        index = None
+        meta = []
 
-    if not PDF_DIR.exists():
-        raise FileNotFoundError(f"PDF folder not found: {PDF_DIR}")
+    for pdf, h in new_files:
+        texts = extract_text_chunks(pdf)   
+        vectors = model.encode(texts)
 
-    print("Loading PDFs...")
-    docs = load_pdfs(PDF_DIR)
-    texts = [d["text"] for d in docs]
+        if index is None:
+            index = faiss.IndexFlatL2(vectors.shape[1])
 
-    print("Loading embedding model...")
-    model = SentenceTransformer("all-MiniLM-L6-v2")
+        index.add(vectors)
+        meta.extend([{"source": pdf.name}] * len(texts))
 
-    print("Encoding PDFs...")
-    embeddings = model.encode(
-        texts,
-        show_progress_bar=True,
-        convert_to_numpy=True
-    ).astype("float32")
+        registry["indexed_files"][pdf.name] = {
+            "hash": h,
+            "indexed_at": datetime.utcnow().isoformat()
+        }
 
-    print("Building FAISS index...")
-    index = faiss.IndexFlatL2(embeddings.shape[1])
-    index.add(embeddings)
+        print(f"Indexed: {pdf.name}")
 
     faiss.write_index(index, str(INDEX_PATH))
+    pickle.dump(meta, open(META_PATH, "wb"))
+    save_registry(registry)
 
-    with open(META_PATH, "wb") as f:
-        pickle.dump(docs, f)
-
-    print(f"\n✅ PDF index built successfully")
-    print(f"Saved: {INDEX_PATH}")
-    print(f"Saved: {META_PATH}")
-    print(f"⏱️ Time: {round(time.time() - start, 2)} seconds")
-
-
-
-# Entry Point
-
+# =========================
+# ENTRY POINT
+# =========================
 if __name__ == "__main__":
-    build_pdf_index()
+    incremental_index()
