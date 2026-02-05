@@ -9,13 +9,6 @@ ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-from services.user_insights import (
-    get_user_or_case_insights,
-    get_pending_cases,
-    get_overdue_cases,
-    get_critical_cases
-)
-
 # =========================
 # Imports
 # =========================
@@ -23,7 +16,21 @@ import streamlit as st
 import pickle
 import faiss
 from sentence_transformers import SentenceTransformer
-from services.retriever import find_similar_cases
+
+from services.user_insights import (
+    get_user_or_case_insights,
+    get_pending_cases,
+    get_overdue_cases,
+    get_critical_cases
+)
+
+from services.retriever import (
+    find_similar_cases,
+    retrieve_context,
+    format_context
+)
+
+from services.agent import pdf_agent
 
 # =========================
 # Streamlit UI Config
@@ -46,36 +53,7 @@ def load_css():
 load_css()
 
 # =========================
-# Helper: Build Recommendation (PDF + CSV SAFE)
-# =========================
-def build_recommendation(results, top_n=3):
-    recommendations = []
-
-    POSSIBLE_TEXT_FIELDS = [
-        "Resolution",
-        "resolution",
-        "solution",
-        "answer",
-        "details",
-        "text",
-        "content",
-        "page_content",
-        "chunk"
-    ]
-
-    for r in results[:top_n]:
-        for field in POSSIBLE_TEXT_FIELDS:
-            if r.get(field):
-                recommendations.append(f"• {r[field]}")
-                break
-
-    if not recommendations:
-        return "No clear resolution found in historical cases."
-
-    return "\n".join(recommendations)
-
-# =========================
-# Header (Logo + Mode)
+# Header
 # =========================
 with st.container():
     _, logo_col, _ = st.columns([1, 1, 1])
@@ -92,7 +70,7 @@ with st.container():
         )
 
 # =========================
-# Reset state on mode change
+# Reset session on mode change
 # =========================
 if "last_query_mode" not in st.session_state:
     st.session_state.last_query_mode = query_mode
@@ -130,7 +108,7 @@ def load_resources():
 model, index, metadata = load_resources()
 
 # =========================
-# User Input
+# User Inputs
 # =========================
 if query_mode == "General MPR Issue":
     query = st.text_area(
@@ -147,39 +125,49 @@ else:
 run_clicked = st.button("Run")
 
 # =========================
-# Session defaults
+# Defaults
 # =========================
 st.session_state.setdefault("user_summary", None)
 st.session_state.setdefault("active_owner", None)
 
 # =========================
-# General MPR Flow
+# GENERAL MPR FLOW
 # =========================
 if run_clicked and query_mode == "General MPR Issue":
 
     if not query.strip():
         st.warning("Please enter an MPR issue.")
+
     else:
-        from services.retriever import retrieve_context
-        from services.agent import pdf_agent
 
-        # -------- RAG Recommended Solution --------
+        # -------- Generate Recommendation --------
         with st.spinner("Generating recommended solution..."):
-           from services.retriever import retrieve_context, format_context
-           results = retrieve_context(query)
-           context = format_context(results)
 
+            rag_results = retrieve_context(query)
+            context = format_context(rag_results)
 
-        if context and context.strip():
-                recommended_solution = pdf_agent(query)
-        else:
+            if context and context.strip():
+
+                prompt = f"""
+                Answer using only below similar MPR cases.
+
+                {context}
+
+                User Question:
+                {query}
+                """
+
+                recommended_solution = pdf_agent(prompt)
+
+            else:
                 recommended_solution = "No clear resolution found in historical cases."
 
         st.markdown("### ✅ Recommended Solution")
         st.write(recommended_solution)
 
-        # -------- Similar Historical Cases --------
+        # -------- Similar Cases --------
         with st.spinner("Searching similar past MPRs..."):
+
             results = find_similar_cases(
                 query=query,
                 model=model,
@@ -187,44 +175,23 @@ if run_clicked and query_mode == "General MPR Issue":
                 metadata=metadata
             )
 
-        results = sorted(results, key=lambda x: x.get("confidence", 0), reverse=True)
-        best_conf = round(results[0].get("confidence", 0), 2) if results else 0
-
-        # =========================
-        # Recommended Solution
-        # =========================
-        st.subheader("✅ Recommended Solution")
-        recommendation_text = build_recommendation(results)
-
-        st.markdown(
-            f"""
-            <div class="recommendation-card">
-                <div class="recommendation-title">
-                    <span>✅</span>
-                    Recommended Solution
-                    <span style="font-size:12px; color:#777;">
-                        (derived from {best_conf}% similar historical cases)
-                    </span>
-                </div>
-                <div class="recommendation-text">
-                    {recommendation_text}
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True
+        results = sorted(
+            results,
+            key=lambda x: x.get("confidence", 0),
+            reverse=True
         )
 
-        # =========================
-        # Similar Historical Cases
-        # =========================
         st.subheader("🔍 Similar Historical Cases")
 
         for i, r in enumerate(results, 1):
+
             confidence = round(r.get("confidence", 0), 2)
             label = "🟢 Best Match" if i == 1 else ""
 
             with st.expander(f"Case {i} {label} — Match Confidence: {confidence}%"):
+
                 for k, v in r.items():
+
                     if k == "confidence" or not v:
                         continue
 
@@ -246,30 +213,35 @@ if run_clicked and query_mode == "General MPR Issue":
                     else:
                         st.write(f"**{k}**: {v}")
 
-
-# User / Case Insights
+# =========================
+# USER SPECIFIC FLOW
 # =========================
 if run_clicked and query_mode == "User-Specific View":
+
     if not user_id.strip():
         st.warning("Please enter a caseID or full name.")
+
     else:
         insights = get_user_or_case_insights(user_id)
 
         if insights["data"] is None:
             st.error("No data found for the given input.")
+
         else:
             if insights["type"] == "case":
                 case = insights["data"]
                 st.subheader(f"📄 Case Details — {case['caseid']}")
                 st.json(case)
+
             else:
                 st.session_state.user_summary = insights["data"]
                 st.session_state.active_owner = insights["data"]["owner"]
 
 # =========================
-# User Summary View
+# USER SUMMARY VIEW
 # =========================
 if st.session_state.user_summary:
+
     summary = st.session_state.user_summary
     owner = st.session_state.active_owner
 
