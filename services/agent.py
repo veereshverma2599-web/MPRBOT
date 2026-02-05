@@ -1,8 +1,7 @@
 import os
 import ollama
 
-# fixthis
-from services.retriever import retrieve_context 
+from services.retriever import retrieve_context
 
 
 # =========================
@@ -10,19 +9,50 @@ from services.retriever import retrieve_context
 # =========================
 OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "llama3.1:8b")
 
+
+def _normalize_context(context):
+    """
+    Ensure retrieved context is always a clean string.
+    Prevents .strip() crashes.
+    """
+
+    if context is None:
+        return ""
+
+    # If retriever returns list
+    if isinstance(context, list):
+        return "\n".join(str(c) for c in context if c)
+
+    # If retriever returns dict
+    if isinstance(context, dict):
+        return "\n".join(f"{k}: {v}" for k, v in context.items())
+
+    return str(context)
+
+
 def pdf_agent(question: str) -> str:
     """
     Answer a question strictly using retrieved PDF context.
-    If answer is not found, respond clearly.
     """
 
-    # 1. Retrieve context from FAISS / PDFs
-    context = retrieve_context(question)
+    # =========================
+    # 1. Retrieve context
+    # =========================
+    try:
+        raw_context = retrieve_context(question)
+        context = _normalize_context(raw_context)
+    except Exception as e:
+        return f"Retriever error: {str(e)}"
 
-    if not context or not context.strip():
+    # =========================
+    # 2. Empty context check
+    # =========================
+    if not context.strip():
         return "Not found in documents"
 
-    # 2. Build strict RAG prompt
+    # =========================
+    # 3. Build RAG prompt
+    # =========================
     prompt = f"""
 You are a document-based assistant.
 
@@ -41,17 +71,22 @@ Question:
 Answer:
 """.strip()
 
-    # 3. Call Ollama LLM
-    response = ollama.chat(
-        model=OLLAMA_LLM_MODEL,
-        messages=[
-            {"role": "user", "content": prompt}
-        ],
-        options={
-            "temperature": 0.2,
-            "top_p": 0.9
-        }
-    )
+  
+    #  Call Ollama
+    
+    try:
+        response = ollama.chat(
+            model=OLLAMA_LLM_MODEL,
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            options={
+                "temperature": 0.2,
+                "top_p": 0.9
+            }
+        )
 
-    # 4. Return clean answer
-    return response["message"]["content"].strip()
+        return response["message"]["content"].strip()
+
+    except Exception as e:
+        return f"LLM error: {str(e)}"
