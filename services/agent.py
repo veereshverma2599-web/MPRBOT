@@ -1,6 +1,9 @@
 import os
 import ollama
-from services.retriever import retrieve_context
+
+# fixthis
+from services.retriever import retrieve_context 
+
 
 # =========================
 # Ollama Configuration

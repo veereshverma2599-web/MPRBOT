@@ -9,10 +9,13 @@ import faiss
 from sentence_transformers import SentenceTransformer
 
 # =========================
-# PATH SETUP
+# PATH SETUP (FIXED)
 # =========================
 BASE_DIR = Path(__file__).resolve().parents[1]
-PDF_DIR = BASE_DIR / "pdfs"
+
+# ✅ FIXED PATH
+PDF_DIR = BASE_DIR / "data" / "pdfs"
+
 DATA_DIR = BASE_DIR / "data"
 
 INDEX_PATH = DATA_DIR / "pdf_index.faiss"
@@ -31,13 +34,37 @@ def file_hash(path):
             h.update(chunk)
     return h.hexdigest()
 
+
 def load_registry():
     if REGISTRY_PATH.exists():
         return json.loads(REGISTRY_PATH.read_text())
     return {"indexed_files": {}}
 
+
 def save_registry(reg):
     REGISTRY_PATH.write_text(json.dumps(reg, indent=2))
+
+
+# =========================
+# SIMPLE PDF TEXT EXTRACTOR
+# =========================
+def extract_text_chunks(pdf_path, chunk_size=500):
+    import fitz  # PyMuPDF
+
+    doc = fitz.open(pdf_path)
+    text = ""
+
+    for page in doc:
+        text += page.get_text()
+
+    words = text.split()
+    chunks = [
+        " ".join(words[i:i + chunk_size])
+        for i in range(0, len(words), chunk_size)
+    ]
+
+    return chunks
+
 
 # =========================
 # PDF DISCOVERY
@@ -47,12 +74,15 @@ def get_new_pdfs():
     indexed = registry["indexed_files"]
 
     new_files = []
+
     for pdf in PDF_DIR.glob("*.pdf"):
         h = file_hash(pdf)
+
         if pdf.name not in indexed or indexed[pdf.name]["hash"] != h:
             new_files.append((pdf, h))
 
     return new_files, registry
+
 
 # =========================
 # MAIN INCREMENTAL INDEXER
@@ -73,7 +103,9 @@ def incremental_index():
         meta = []
 
     for pdf, h in new_files:
-        texts = extract_text_chunks(pdf)   
+        print(f"Processing: {pdf.name}")
+
+        texts = extract_text_chunks(pdf)
         vectors = model.encode(texts)
 
         if index is None:
@@ -92,6 +124,9 @@ def incremental_index():
     faiss.write_index(index, str(INDEX_PATH))
     pickle.dump(meta, open(META_PATH, "wb"))
     save_registry(registry)
+
+    print("Index build complete!")
+
 
 # =========================
 # ENTRY POINT
