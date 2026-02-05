@@ -60,14 +60,16 @@ with st.container():
     with logo_col:
         st.image("assets/logo.png", width=280)
 
-    _, radio_col, _ = st.columns([1, 1, 1])
-    with radio_col:
-        query_mode = st.radio(
-            "",
-            ["General MPR Issue", "User-Specific View"],
-            horizontal=True,
-            label_visibility="collapsed"
-        )
+radio_col = st.columns([1,2,1])[1]
+
+with radio_col:
+    query_mode = st.radio(
+        "Query Mode",
+        ["General MPR Issue", "User-Specific View"],
+        horizontal=True,
+        label_visibility="collapsed"
+    )
+
 
 # =========================
 # Reset session on mode change
