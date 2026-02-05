@@ -31,7 +31,5 @@ OLLAMA_MODEL = os.getenv(
     "llama3.1:8b"
 )
 
-# =========================
-# Retrieval Settings
-# =========================
+
 TOP_K = int(os.getenv("TOP_K", 5))
