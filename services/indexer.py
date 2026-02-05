@@ -125,8 +125,8 @@ def build_index():
     print(f"\n⏱️ Index build time (25k records): {round(end_time - start_time, 2)} seconds")
 
 
-# =============================
+
 # Entry Point
-# =============================
+
 if __name__ == "__main__":
     build_index()
