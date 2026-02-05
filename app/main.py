@@ -165,7 +165,10 @@ if run_clicked and query_mode == "General MPR Issue":
 
         # -------- RAG Recommended Solution --------
         with st.spinner("Generating recommended solution..."):
-            context = retrieve_context(query)
+           from services.retriever import retrieve_context, format_context
+           results = retrieve_context(query)
+           context = format_context(results)
+
 
             if context and context.strip():
                 recommended_solution = pdf_agent(query)
@@ -243,7 +246,7 @@ if run_clicked and query_mode == "General MPR Issue":
                     else:
                         st.write(f"**{k}**: {v}")
 
-# =========================
+
 # User / Case Insights
 # =========================
 if run_clicked and query_mode == "User-Specific View":

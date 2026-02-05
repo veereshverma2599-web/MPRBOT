@@ -1,58 +1,70 @@
 ﻿import time
-import numpy as np
+import pickle
+import faiss
+from pathlib import Path
+from sentence_transformers import SentenceTransformer
+
+# ---------------------------
+# Path Setup
+# ---------------------------
+BASE_DIR = Path(__file__).resolve().parents[1]
+DATA_DIR = BASE_DIR / "data"
+
+INDEX_PATH = DATA_DIR / "mpr_index.faiss"
+META_PATH = DATA_DIR / "mpr_meta.pkl"
+
+# ---------------------------
+# Load Resources ONCE
+# ---------------------------
+MODEL = SentenceTransformer("all-MiniLM-L6-v2")
+INDEX = faiss.read_index(str(INDEX_PATH))
+
+with open(META_PATH, "rb") as f:
+    METADATA = pickle.load(f)
+
+print("Retriever loaded ✅")
 
 
-def find_similar_cases(query, model, index, metadata, top_k=5):
-    """
-    Find similar MPR cases using FAISS
-    """
+# ---------------------------
+# Retrieve Similar Cases
+# ---------------------------
+def retrieve_context(query, top_k=5):
 
-    # Encode query
-    query_embedding = model.encode(
-        [query],
-        convert_to_numpy=True
-    ).astype("float32")
+    if not query:
+        return []
 
-    # FAISS search
     start_time = time.time()
-    distances, indices = index.search(query_embedding, top_k)
-    end_time = time.time()
 
-    search_time_ms = round((end_time - start_time) * 1000, 2)
-    print(f"FAISS retrieval time: {search_time_ms} ms")
+    query_embedding = MODEL.encode([query]).astype("float32")
 
-    # Normalize confidence
-    dists = distances[0]
-    d_min = float(dists.min())
-    d_max = float(dists.max())
+    distances, indices = INDEX.search(query_embedding, top_k)
 
     results = []
 
     for rank, idx in enumerate(indices[0]):
-        if idx < 0 or idx >= len(metadata):
+        if idx < 0 or idx >= len(METADATA):
             continue
 
-        distance = float(dists[rank])
-
-        if d_max > d_min:
-            confidence = 100 * (1 - (distance - d_min) / (d_max - d_min))
-        else:
-            confidence = 100.0
-
-        confidence = round(confidence, 2)
-
-        case = metadata[idx].copy()
-        case["distance"] = round(distance, 4)
-        case["confidence"] = confidence
+        case = METADATA[idx].copy()
+        case["distance"] = float(distances[0][rank])
 
         results.append(case)
+
+    print(f"Retrieval time: {(time.time()-start_time)*1000:.2f} ms")
 
     return results
 
 
-# ✅ Wrapper function used by main.py
-def retrieve_context(query, model, index, metadata, top_k=5):
-    """
-    Wrapper for RAG retrieval
-    """
-    return find_similar_cases(query, model, index, metadata, top_k)
+# ---------------------------
+# Format Context For LLM
+# ---------------------------
+def format_context(results):
+
+    text = ""
+
+    for r in results:
+        text += f"\nCase: {r.get('case_id','N/A')}\n"
+        text += f"Issue: {r.get('issue','')}\n"
+        text += f"Resolution: {r.get('resolution','')}\n"
+
+    return text
