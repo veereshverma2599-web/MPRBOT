@@ -39,7 +39,6 @@ def retrieve_context(query):
     return "\n".join(chunks)
 
 
-
 def find_similar_cases(query, top_k=5):
 
     if not query.strip():
@@ -63,3 +62,11 @@ def find_similar_cases(query, top_k=5):
         results.append(case)
 
     return results
+
+
+def format_context(context_text):
+
+    if not context_text:
+        return ""
+
+    return f"\n\n📄 Context:\n{context_text}"
