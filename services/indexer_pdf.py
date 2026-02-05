@@ -1,32 +1,22 @@
-import os
 import json
 import hashlib
 import pickle
-from pathlib import Path
 from datetime import datetime
-
+import fitz
 import faiss
+
 from sentence_transformers import SentenceTransformer
+from core.config import (
+    PDF_DIR,
+    PDF_INDEX,
+    PDF_META,
+    PDF_REGISTRY,
+    EMBED_MODEL
+)
 
-# =========================
-# PATH SETUP (FIXED)
-# =========================
-BASE_DIR = Path(__file__).resolve().parents[1]
+model = SentenceTransformer(EMBED_MODEL)
 
-# ✅ FIXED PATH
-PDF_DIR = BASE_DIR / "data" / "pdfs"
 
-DATA_DIR = BASE_DIR / "data"
-
-INDEX_PATH = DATA_DIR / "pdf_index.faiss"
-META_PATH = DATA_DIR / "pdf_meta.pkl"
-REGISTRY_PATH = DATA_DIR / "index_registry.json"
-
-model = SentenceTransformer("all-MiniLM-L6-v2")
-
-# =========================
-# HELPERS
-# =========================
 def file_hash(path):
     h = hashlib.md5()
     with open(path, "rb") as f:
@@ -36,21 +26,16 @@ def file_hash(path):
 
 
 def load_registry():
-    if REGISTRY_PATH.exists():
-        return json.loads(REGISTRY_PATH.read_text())
+    if PDF_REGISTRY.exists():
+        return json.loads(PDF_REGISTRY.read_text())
     return {"indexed_files": {}}
 
 
 def save_registry(reg):
-    REGISTRY_PATH.write_text(json.dumps(reg, indent=2))
+    PDF_REGISTRY.write_text(json.dumps(reg, indent=2))
 
 
-# =========================
-# SIMPLE PDF TEXT EXTRACTOR
-# =========================
 def extract_text_chunks(pdf_path, chunk_size=500):
-    import fitz  # PyMuPDF
-
     doc = fitz.open(pdf_path)
     text = ""
 
@@ -58,18 +43,15 @@ def extract_text_chunks(pdf_path, chunk_size=500):
         text += page.get_text()
 
     words = text.split()
-    chunks = [
+
+    return [
         " ".join(words[i:i + chunk_size])
         for i in range(0, len(words), chunk_size)
     ]
 
-    return chunks
 
+def incremental_index():
 
-# =========================
-# PDF DISCOVERY
-# =========================
-def get_new_pdfs():
     registry = load_registry()
     indexed = registry["indexed_files"]
 
@@ -81,55 +63,47 @@ def get_new_pdfs():
         if pdf.name not in indexed or indexed[pdf.name]["hash"] != h:
             new_files.append((pdf, h))
 
-    return new_files, registry
-
-
-# =========================
-# MAIN INCREMENTAL INDEXER
-# =========================
-def incremental_index():
-    new_files, registry = get_new_pdfs()
-
     if not new_files:
         print("No new PDFs found")
         return
 
-    # Load or create FAISS
-    if INDEX_PATH.exists():
-        index = faiss.read_index(str(INDEX_PATH))
-        meta = pickle.load(open(META_PATH, "rb"))
+    if PDF_INDEX.exists():
+        index = faiss.read_index(str(PDF_INDEX))
+        meta = pickle.load(open(PDF_META, "rb"))
     else:
         index = None
         meta = []
 
     for pdf, h in new_files:
-        print(f"Processing: {pdf.name}")
 
-        texts = extract_text_chunks(pdf)
-        vectors = model.encode(texts)
+        print("Processing:", pdf.name)
+
+        chunks = extract_text_chunks(pdf)
+        vectors = model.encode(chunks)
 
         if index is None:
             index = faiss.IndexFlatL2(vectors.shape[1])
 
         index.add(vectors)
-        meta.extend([{"source": pdf.name}] * len(texts))
+
+        # ⭐ IMPORTANT FIX
+        for chunk in chunks:
+            meta.append({
+                "text": chunk,
+                "source": pdf.name
+            })
 
         registry["indexed_files"][pdf.name] = {
             "hash": h,
             "indexed_at": datetime.utcnow().isoformat()
         }
 
-        print(f"Indexed: {pdf.name}")
-
-    faiss.write_index(index, str(INDEX_PATH))
-    pickle.dump(meta, open(META_PATH, "wb"))
+    faiss.write_index(index, str(PDF_INDEX))
+    pickle.dump(meta, open(PDF_META, "wb"))
     save_registry(registry)
 
-    print("Index build complete!")
+    print("PDF Index build complete")
 
 
-# =========================
-# ENTRY POINT
-# =========================
 if __name__ == "__main__":
     incremental_index()
