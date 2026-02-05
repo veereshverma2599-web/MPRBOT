@@ -170,9 +170,9 @@ if run_clicked and query_mode == "General MPR Issue":
            context = format_context(results)
 
 
-            if context and context.strip():
+        if context and context.strip():
                 recommended_solution = pdf_agent(query)
-            else:
+        else:
                 recommended_solution = "No clear resolution found in historical cases."
 
         st.markdown("### ✅ Recommended Solution")
