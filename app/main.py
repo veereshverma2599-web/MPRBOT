@@ -156,9 +156,26 @@ st.session_state.setdefault("active_owner", None)
 # General MPR Flow
 # =========================
 if run_clicked and query_mode == "General MPR Issue":
+
     if not query.strip():
         st.warning("Please enter an MPR issue.")
     else:
+        from services.retriever import retrieve_context
+        from services.agent import pdf_agent
+
+        # -------- RAG Recommended Solution --------
+        with st.spinner("Generating recommended solution..."):
+            context = retrieve_context(query)
+
+            if context and context.strip():
+                recommended_solution = pdf_agent(query)
+            else:
+                recommended_solution = "No clear resolution found in historical cases."
+
+        st.markdown("### ✅ Recommended Solution")
+        st.write(recommended_solution)
+
+        # -------- Similar Historical Cases --------
         with st.spinner("Searching similar past MPRs..."):
             results = find_similar_cases(
                 query=query,
