@@ -1,0 +1,20 @@
+{
+  "indexed_files": {
+    "RMG - Allocation.pdf": {
+      "hash": "8e6db66252075fc3a52ec12b9c4d498b",
+      "indexed_at": "2026-02-06T07:02:56.825906"
+    },
+    "RMG - Modify Allocation.pdf": {
+      "hash": "8e765c48b51683730c4f66613293a185",
+      "indexed_at": "2026-02-06T07:02:56.918180"
+    },
+    "RMG - Search by Resource.pdf": {
+      "hash": "abbd365b3abf024350bba685e3a5886f",
+      "indexed_at": "2026-02-06T07:02:56.985174"
+    },
+    "RMG - Deallocation.pdf": {
+      "hash": "5b4668c982d8c5ff6c1f29ed1b2a5116",
+      "indexed_at": "2026-02-06T07:02:57.044883"
+    }
+  }
+}
