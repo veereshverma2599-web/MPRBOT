@@ -12,4 +12,4 @@ PDF_REGISTRY = DATA_DIR / "index_registry.json"
 EMBED_MODEL = os.getenv("EMBED_MODEL", "all-MiniLM-L6-v2")
 OLLAMA_MODEL = os.getenv("OLLAMA_LLM_MODEL", "llama3.1:8b")
 
-TOP_K = int(os.getenv("TOP_K", 5))
+TOP_K = int(os.getenv("TOP_K", 3))

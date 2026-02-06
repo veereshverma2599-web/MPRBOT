@@ -132,6 +132,7 @@ run_clicked = st.button("Run")
 st.session_state.setdefault("user_summary", None)
 st.session_state.setdefault("active_owner", None)
 
+
 # =========================
 # GENERAL MPR FLOW
 # =========================
@@ -144,25 +145,7 @@ if run_clicked and query_mode == "General MPR Issue":
 
         # -------- Generate Recommendation --------
         with st.spinner("Generating recommended solution..."):
-
-            rag_results = retrieve_context(query)
-            context = format_context(rag_results)
-
-            if context and context.strip():
-
-                prompt = f"""
-                Answer using only below similar MPR cases.
-
-                {context}
-
-                User Question:
-                {query}
-                """
-
-                recommended_solution = pdf_agent(prompt)
-
-            else:
-                recommended_solution = "No clear resolution found in historical cases."
+            recommended_solution = pdf_agent(query)
 
         st.markdown("### ✅ Recommended Solution")
         st.write(recommended_solution)
@@ -170,12 +153,8 @@ if run_clicked and query_mode == "General MPR Issue":
         # -------- Similar Cases --------
         with st.spinner("Searching similar past MPRs..."):
 
-            results = find_similar_cases(
-                query=query,
-                model=model,
-                index=index,
-                metadata=metadata
-            )
+            results = find_similar_cases(query)
+
 
         results = sorted(
             results,
@@ -214,6 +193,7 @@ if run_clicked and query_mode == "General MPR Issue":
                         )
                     else:
                         st.write(f"**{k}**: {v}")
+
 
 # =========================
 # USER SPECIFIC FLOW

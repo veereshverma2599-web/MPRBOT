@@ -86,7 +86,7 @@ def incremental_index():
 
         index.add(vectors)
 
-        # ⭐ IMPORTANT FIX
+        # ⭐ IMPORTANT 
         for chunk in chunks:
             meta.append({
                 "text": chunk,

@@ -126,7 +126,7 @@ def build_index():
 
 
 
-# Entry Point
+# Entry Poi
 
 if __name__ == "__main__":
     build_index()
